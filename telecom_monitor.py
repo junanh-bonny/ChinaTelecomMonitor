@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Repo: https://github.com/Cp0204/ChinaTelecomMonitor
-# Modify: 2026-05-28 (添加 usage.json 生成)
+# Modify: 2026-05-28 (修复语法错误 + 生成 usage.json)
 
 import os
 import sys
@@ -152,10 +152,12 @@ def main():
     common_str = f"{common_str} {status_icon}"
     special_str = f"{telecom.convert_flow(summary['specialUse'], 'GB', 2)} / {telecom.convert_flow(summary['specialTotal'], 'GB', 2)} GB" if summary["specialTotal"] > 0 else ""
 
+    # 修复语法错误：不要在外层 f-string 内部使用单引号包裹字典键
+    voice_part = f' / {summary["voiceTotal"]}' if summary["voiceTotal"] > 0 else ''
     notify_str = f"""
 📱 手机：{summary['phonenum']}
 💰 余额：{round(summary['balance']/100,2)}
-📞 通话：{summary['voiceUsage']}{f' / {summary['voiceTotal']}' if summary['voiceTotal']>0 else ''} min
+📞 通话：{summary['voiceUsage']}{voice_part} min
 🌐 总流量
   - 通用：{common_str}{f'{chr(10)}  - 专用：{special_str}' if special_str else ''}"""
 
