@@ -1,5 +1,5 @@
-//pycryptodome
-//requests
+#pycryptodome
+#requests
 Flask
 requests
 pycryptodome
