@@ -1,43 +1,34 @@
 name: Monitor Telecom Usage
 
 on:
-  workflow_dispatch:          # 手动触发
+  workflow_dispatch:
   schedule:
-    - cron: '0 20 * * *'      # 每天 UTC 20:00
+    - cron: '0 8,20 * * *'
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
+          
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pycryptodome requests
-
-      - name: Download config.json
-        run: |
-          wget https://raw.githubusercontent.com/${{ github.repository }}/main/config.json -O config.json
-          echo "config.json downloaded"
-
+          python -m pip install --upgrade pip
+          pip install requests pycryptodome
+          
       - name: Run monitor script
         run: python telecom_monitor.py
-
-      - name: Save token file (if exists)
+        
+      - name: Commit and push usage.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -f "config/login_info.json" ]; then
-            git add config/login_info.json
-            git commit -m "Update token file" || echo "No changes to commit"
-            git push
-          else
-            echo "config/login_info.json not found, skipping save"
-          fi
+          git add usage.json
+          git commit -m "Update usage data" || echo "No changes to commit"
+          git push
