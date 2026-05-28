@@ -6,14 +6,13 @@ on:
     - cron: '0 * * * *'  
 
 permissions:
-  contents: write   # 授予写入仓库的权限
+  contents: write
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
     env:
-      TELECOM_PHONE: ${{ secrets.TELECOM_PHONE }}
-      TELECOM_PASSWORD: ${{ secrets.TELECOM_PASSWORD }}
+      TELECOM_USER: ${{ secrets.TELECOM_USER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,7 +33,7 @@ jobs:
       - name: Commit and push usage.json
         run: |
           git config user.name "github-actions[bot]"
-          git config.user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add usage.json
           git commit -m "Update usage data" || echo "No changes to commit"
           git push
