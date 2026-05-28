@@ -28,7 +28,10 @@ except:
 
 CONFIG_DATA = {}
 NOTIFYS = []
-CONFIG_PATH = sys.argv[1] if len(sys.argv) > 1 else "telecom_config.json"
+# 优先使用 config.json（与 GitHub 工作流保持一致）
+CONFIG_PATH = sys.argv[1] if len(sys.argv) > 1 else "config.json"
+if not os.path.exists(CONFIG_PATH):
+    CONFIG_PATH = "telecom_config.json"
 TELECOM_FLUX_PACKAGE = os.environ.get("TELECOM_FLUX_PACKAGE", "true").lower() != "false"
 TELECOM_ONLY_WARN = os.environ.get("TELECOM_ONLY_WARN", "false").lower() == "true"
 
@@ -77,7 +80,7 @@ def usage_status_icon(used, total):
 
 
 def main():
-    global CONFIG_DATA
+    global CONFIG_DATA, TELECOM_FLUX_PACKAGE, TELECOM_ONLY_WARN
     start_time = datetime.datetime.now()
     print(f"===============程序开始===============")
     print(f"⏰ 执行时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -90,21 +93,32 @@ def main():
     if not CONFIG_DATA.get("user"):
         CONFIG_DATA["user"] = {}
 
+    # 从配置文件覆盖环境变量设置（优先使用配置文件）
+    if "TELECOM_FLUX_PACKAGE" in CONFIG_DATA:
+        TELECOM_FLUX_PACKAGE = CONFIG_DATA["TELECOM_FLUX_PACKAGE"]
+    if "TELECOM_ONLY_WARN" in CONFIG_DATA:
+        TELECOM_ONLY_WARN = CONFIG_DATA["TELECOM_ONLY_WARN"]
+
     telecom = Telecom()
 
     def auto_login():
-        if TELECOM_USER := os.environ.get("TELECOM_USER"):
-            phonenum, password = (
-                TELECOM_USER[:11],
-                TELECOM_USER[11:],
-            )
-        elif TELECOM_USER := CONFIG_DATA.get("user", {}):
-            phonenum, password = (
-                TELECOM_USER.get("phonenum", ""),
-                TELECOM_USER.get("password", ""),
-            )
-        else:
+        # 优先环境变量 → config.json 中的 TELECOM_USER → 旧格式 user
+        telecom_user_str = None
+        if env_user := os.environ.get("TELECOM_USER"):
+            telecom_user_str = env_user
+        elif config_user_str := CONFIG_DATA.get("TELECOM_USER"):
+            telecom_user_str = config_user_str
+        elif config_user_dict := CONFIG_DATA.get("user", {}):
+            # 兼容旧的字典格式
+            phonenum = config_user_dict.get("phonenum", "")
+            password = config_user_dict.get("password", "")
+            if phonenum and password:
+                telecom_user_str = phonenum + password
+        if not telecom_user_str:
             exit("自动登录：未设置账号密码，退出")
+        # 手机号固定 11 位，剩余部分为密码
+        phonenum = telecom_user_str[:11]
+        password = telecom_user_str[11:]
         if not phonenum.isdigit():
             exit("自动登录：手机号设置错误，退出")
         else:
