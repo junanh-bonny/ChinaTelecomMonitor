@@ -1,7 +1,7 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Repo: https://github.com/Cp0204/ChinaTelecomMonitor
-# Modify: 2026-05-28 (修复语法错误 + 生成 usage.json)
+# Modify: 2026-05-28 (修复语法错误 + 生成 usage.json + 修正流量单位)
 
 import os
 import sys
@@ -175,10 +175,14 @@ def main():
             send_notify("【电信套餐用量监控】", notify_body)
 
     # ========== 生成供手机读取的 usage.json ==========
+    # 注意：summary 中的 commonUse / commonTotal 单位是 MB，需要转换为 GB（十进制 1000）
+    flow_used_gb = round(summary['commonUse'] / 1000, 2)
+    flow_total_gb = round(summary['commonTotal'] / 1000, 2)
+
     usage_json = {
         "balance": round(summary['balance'] / 100, 2),
-        "flowUsed": round(summary['commonUse'], 2),
-        "flowTotal": round(summary['commonTotal'], 2),
+        "flowUsed": flow_used_gb,
+        "flowTotal": flow_total_gb,
         "voiceUsed": summary['voiceUsage'],
         "voiceTotal": summary['voiceTotal'] if summary['voiceTotal'] > 0 else 0,
         "updateTime": summary['createTime'],
