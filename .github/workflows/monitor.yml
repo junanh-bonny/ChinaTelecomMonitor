@@ -3,7 +3,7 @@ name: Monitor Telecom Usage
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *'  
+    - cron: '0 * * * *'  
 
 permissions:
   contents: write   # 授予写入仓库的权限
