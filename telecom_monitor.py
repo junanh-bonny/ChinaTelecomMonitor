@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Repo: https://github.com/Cp0204/ChinaTelecomMonitor
-# Modify: 2026-05-28 (修复语法错误 + 生成 usage.json + 修正流量单位)
+# Modify: 2026-07-14 (修复滑块验证崩溃 + data为null时兜底旧数据)
 
 import os
 import sys
@@ -60,13 +60,30 @@ def usage_status_icon(used, total):
         return "🟢"
 
 
+def keep_old_usage_json():
+    """滑块验证或登录失败时，保留旧 usage.json 并更新 updateTime 为当前时间，避免覆盖旧数据"""
+    if os.path.exists("usage.json"):
+        try:
+            with open("usage.json", "r", encoding="utf-8") as f:
+                old_data = json.load(f)
+            now_gmt8 = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+            old_data["updateTime"] = now_gmt8.strftime("%Y-%m-%d %H:%M:%S") + " (缓存)"
+            with open("usage.json", "w", encoding="utf-8") as f:
+                json.dump(old_data, f, ensure_ascii=False, indent=2)
+            print("⚠️ 登录失败，已保留旧 usage.json 数据")
+        except Exception as e:
+            print(f"⚠️ 读取旧 usage.json 失败: {e}")
+    else:
+        print("⚠️ 登录失败且无旧 usage.json 可用")
+
+
 def main():
     global CONFIG_DATA
     start_time = datetime.datetime.now()
     print(f"===============程序开始===============")
     print(f"⏰ 执行时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print()
-    
+
     if os.path.exists(CONFIG_PATH):
         print(f"⚙️ 正从 {CONFIG_PATH} 文件中读取配置")
         with open(CONFIG_PATH, "r", encoding="utf-8") as file:
@@ -82,16 +99,22 @@ def main():
         elif TELECOM_USER := CONFIG_DATA.get("user", {}):
             phonenum, password = TELECOM_USER.get("phonenum", ""), TELECOM_USER.get("password", "")
         else:
+            keep_old_usage_json()
             exit("自动登录：未设置账号密码，退出")
         if not phonenum.isdigit():
+            keep_old_usage_json()
             exit("自动登录：手机号设置错误，退出")
         print(f"自动登录：{phonenum}")
-        
+
         login_fail_time = CONFIG_DATA.get("loginFailTime", 0)
         if login_fail_time < 5:
             data = telecom.do_login(phonenum, password)
-            print(f"[DEBUG] 登录响应: {json.dumps(data, ensure_ascii=False, indent=2)}")  # 调试输出
-            if data.get("responseData", {}).get("resultCode") == "0000":
+            print(f"[DEBUG] 登录响应: {json.dumps(data, ensure_ascii=False, indent=2)}")
+
+            result_code = data.get("responseData", {}).get("resultCode", "未知")
+            result_desc = data.get("responseData", {}).get("resultDesc", "无描述")
+
+            if result_code == "0000":
                 print(f"自动登录：成功")
                 login_info = data["responseData"]["data"]["loginSuccessResult"]
                 login_info["phonenum"] = phonenum
@@ -99,15 +122,25 @@ def main():
                 CONFIG_DATA["login_info"] = login_info
                 CONFIG_DATA["loginFailTime"] = 0
                 telecom.set_login_info(login_info)
-            else:
-                # 修复第102行：处理loginFailTime可能是字符串的情况，并输出详细错误信息
-                result_code = data.get("responseData", {}).get("resultCode", "未知")
-                result_desc = data.get("responseData", {}).get("resultDesc", "无描述")
+
+            elif result_code == "122001":
+                # 滑块验证：不崩溃，保留旧数据，正常退出
                 print(f"[DEBUG] 登录失败 - resultCode: {result_code}, resultDesc: {result_desc}")
-                
-                login_fail_time_value = data.get("responseData", {}).get("data", {}).get("loginFailResult", {}).get("loginFailTime", login_fail_time + 1)
+                print("⚠️ 触发滑块验证，GitHub Actions 服务器 IP 被风控，本次跳过更新")
+                login_fail_time += 1
+                CONFIG_DATA["loginFailTime"] = login_fail_time
+                update_config()
+                keep_old_usage_json()
+                sys.exit(0)  # 正常退出，不报错，不影响 Actions 状态
+
+            else:
+                print(f"[DEBUG] 登录失败 - resultCode: {result_code}, resultDesc: {result_desc}")
+                # 修复：data 字段可能是 null，用 or {} 兜底
+                response_data = data.get("responseData", {}) or {}
+                inner_data = response_data.get("data") or {}
+                login_fail_result = inner_data.get("loginFailResult") or {}
+                login_fail_time_value = login_fail_result.get("loginFailTime", login_fail_time + 1)
                 try:
-                    # 如果是字符串日期格式，则累加失败次数；否则直接转换为int
                     if isinstance(login_fail_time_value, str):
                         login_fail_time = login_fail_time + 1
                     else:
@@ -116,11 +149,13 @@ def main():
                     login_fail_time = login_fail_time + 1
                 CONFIG_DATA["loginFailTime"] = login_fail_time
                 update_config()
+                keep_old_usage_json()
                 add_notify(f"自动登录：已连续失败{login_fail_time}次，程序退出 (错误代码: {result_code}, 描述: {result_desc})")
-                exit(data)
+                sys.exit(0)  # 保留旧数据，正常退出
         else:
             print(f"自动登录：已连续失败{login_fail_time}次，为避免风控不再执行")
-            exit()
+            keep_old_usage_json()
+            sys.exit(0)
 
     login_info = CONFIG_DATA.get("login_info", {})
     if login_info and login_info.get("phonenum"):
@@ -140,6 +175,7 @@ def main():
     try:
         summary = telecom.to_summary(important_data["responseData"]["data"])
     except Exception as e:
+        keep_old_usage_json()
         exit(f"简化主要信息出错：{e}")
 
     if summary:
@@ -170,7 +206,6 @@ def main():
     common_str = f"{common_str} {status_icon}"
     special_str = f"{telecom.convert_flow(summary['specialUse'], 'GB', 2)} / {telecom.convert_flow(summary['specialTotal'], 'GB', 2)} GB" if summary["specialTotal"] > 0 else ""
 
-    # 修复语法错误：不要在外层 f-string 内部使用单引号包裹字典键
     voice_part = f' / {summary["voiceTotal"]}' if summary["voiceTotal"] > 0 else ''
     notify_str = f"""
 📱 手机：{summary['phonenum']}
@@ -193,13 +228,10 @@ def main():
             send_notify("【电信套餐用量监控】", notify_body)
 
     # ========== 生成供手机读取的 usage.json ==========
-    # 注意：summary 中的 commonUse / commonTotal 单位是 KB，需要转换为 GB（二进制 1024*1024）
     flow_used_gb = round(summary['commonUse'] / 1024 / 1024, 2)
     flow_total_gb = round(summary['commonTotal'] / 1024 / 1024, 2)
-    
-    # 获取 GMT+8 时间（北京时间）
-    now_utc = datetime.datetime.utcnow()
-    now_gmt8 = now_utc + datetime.timedelta(hours=8)
+
+    now_gmt8 = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
     update_time_gmt8 = now_gmt8.strftime("%Y-%m-%d %H:%M:%S")
 
     usage_json = {
